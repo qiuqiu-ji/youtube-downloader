@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 视频下载器</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <!-- 标题部分 -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">YouTube 视频下载器</h1>
+            <p class="text-gray-600">输入YouTube视频链接，轻松下载高质量视频</p>
+        </div>
+
+        <!-- 下载表单 -->
+        <div class="max-w-xl mx-auto bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex gap-2">
+                <input type="text" id="videoUrl" 
+                    class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
+                    placeholder="请输入YouTube视频链接...">
+                <button onclick="downloadVideo()" 
+                    class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    下载
+                </button>
+            </div>
+            <div id="downloadProgress" class="mt-4 hidden">
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+                <p class="text-sm text-gray-600 mt-2" id="progressText">准备下载...</p>
+            </div>
+        </div>
+
+        <!-- 已下载视频列表 -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold mb-4">已下载视频</h2>
+            <div class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                {% for video in videos %}
+                <div class="border rounded-lg p-4">
+                    <video class="w-full rounded-lg mb-2" controls>
+                        <source src="/downloads/{{ video.title }}" type="video/mp4">
+                        您的浏览器不支持视频播放。
+                    </video>
+                    <h3 class="font-semibold mb-1">{{ video.title }}</h3>
+                    <p class="text-sm text-gray-600">大小: {{ video.size }}</p>
+                    <p class="text-sm text-gray-600">路径: {{ video.path }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function downloadVideo() {
+            const videoUrl = document.getElementById('videoUrl').value;
+            if (!videoUrl) {
+                alert('请输入视频链接');
+                return;
+            }
+
+            const progressDiv = document.getElementById('downloadProgress');
+            const progressBar = progressDiv.querySelector('.bg-blue-600');
+            const progressText = document.getElementById('progressText');
+            progressDiv.classList.remove('hidden');
+
+            try {
+                // 开始下载
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `url=${encodeURIComponent(videoUrl)}`
+                });
+                
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // 轮询下载状态
+                const videoId = data.video_id;
+                const checkStatus = async () => {
+                    const statusResponse = await fetch(`/status/${videoId}`);
+                    const statusData = await statusResponse.json();
+                    
+                    if (statusData.status === 'downloading') {
+                        progressBar.style.width = `${statusData.progress}%`;
+                        progressText.textContent = `下载中: ${statusData.progress.toFixed(1)}%`;
+                        setTimeout(checkStatus, 1000);
+                    } else if (statusData.status === 'finished') {
+                        progressBar.style.width = '100%';
+                        progressText.textContent = '下载完成！';
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else if (statusData.status === 'error') {
+                        throw new Error(statusData.error || '下载失败');
+                    }
+                };
+
+                await checkStatus();
+            } catch (error) {
+                progressText.textContent = `错误: ${error.message}`;
+                progressText.classList.add('text-red-500');
+            }
+        }
+    </script>
+</body>
+</html>
